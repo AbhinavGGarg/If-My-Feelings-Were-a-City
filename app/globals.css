@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+:root {
+  --background: #050b12;
+  --foreground: #ecf2f8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+}
+
+* {
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-serif), serif;
+  letter-spacing: -0.02em;
+}
+
+::selection {
+  background: rgba(132, 194, 255, 0.35);
+  color: #f6fbff;
+}
