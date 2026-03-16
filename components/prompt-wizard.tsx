@@ -18,9 +18,25 @@ import { saveCityModel } from "@/lib/storage";
 import type { PromptAnswers } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+type PromptDraftAnswers = Omit<PromptAnswers, "dominantEmotion" | "cityPace"> & {
+  dominantEmotion: PromptAnswers["dominantEmotion"] | "";
+  cityPace: PromptAnswers["cityPace"] | "";
+};
+
+const blankAnswers: PromptDraftAnswers = {
+  reflection: "",
+  dominantEmotion: "",
+  underConstruction: "",
+  feelsEmpty: "",
+  feelsAlive: "",
+  avoidRevisiting: "",
+  keepsYouGoing: "",
+  cityPace: "",
+};
+
 export function PromptWizard() {
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<PromptAnswers>(defaultAnswers);
+  const [answers, setAnswers] = useState<PromptDraftAnswers>(blankAnswers);
   const [touched, setTouched] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const router = useRouter();
@@ -30,9 +46,13 @@ export function PromptWizard() {
 
   const currentValue = answers[current.id];
   const isCurrentStepValid =
-    typeof currentValue === "string" ? currentValue.trim().length >= (current.id === "reflection" ? 35 : 3) : true;
+    current.id === "dominantEmotion" || current.id === "cityPace"
+      ? Boolean(currentValue)
+      : typeof currentValue === "string"
+        ? currentValue.trim().length >= (current.id === "reflection" ? 35 : 3)
+        : true;
 
-  const updateField = <K extends keyof PromptAnswers>(key: K, value: PromptAnswers[K]) => {
+  const updateField = <K extends keyof PromptDraftAnswers>(key: K, value: PromptDraftAnswers[K]) => {
     setAnswers((previous) => ({ ...previous, [key]: value }));
     setTouched(false);
   };
@@ -62,7 +82,18 @@ export function PromptWizard() {
       return;
     }
 
-    await completeGeneration(answers);
+    if (answers.dominantEmotion === "" || answers.cityPace === "") {
+      setTouched(true);
+      return;
+    }
+
+    const finalized: PromptAnswers = {
+      ...answers,
+      dominantEmotion: answers.dominantEmotion,
+      cityPace: answers.cityPace,
+    };
+
+    await completeGeneration(finalized);
   };
 
   return (
