@@ -2,12 +2,14 @@ import { Building2, Landmark } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { districtPlainMeaning } from "@/lib/emotion-copy";
 import type { Building, CityModel, District } from "@/lib/types";
 import { toTitleCase } from "@/lib/utils";
 
 interface DistrictDetailsPanelProps {
   city: CityModel;
   district: District;
+  isDominant: boolean;
 }
 
 function landmarkCount(city: CityModel, districtId: string) {
@@ -18,21 +20,33 @@ function buildingCount(buildings: Building[], districtId: string) {
   return buildings.filter((building) => building.districtId === districtId).length;
 }
 
-export function DistrictDetailsPanel({ city, district }: DistrictDetailsPanelProps) {
+export function DistrictDetailsPanel({ city, district, isDominant }: DistrictDetailsPanelProps) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{district.name}</CardTitle>
-        <CardDescription>{district.description}</CardDescription>
+      <CardHeader className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle>{district.name}</CardTitle>
+          {isDominant ? <Badge variant="amber">Most dominant district</Badge> : <Badge>Selected district</Badge>}
+        </div>
+        <CardDescription>{districtPlainMeaning(district.name, district.anchorEmotion)}</CardDescription>
       </CardHeader>
+
       <CardContent className="space-y-4">
+        <div>
+          <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-400">Why this appeared in your city</p>
+          <p className="text-sm leading-relaxed text-slate-300">{district.description}</p>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-400">What this suggests</p>
+          <p className="text-sm leading-relaxed text-slate-300">{district.symbolism}</p>
+        </div>
+
         <div className="flex flex-wrap gap-2">
           {district.emotionalTags.map((tag) => (
             <Badge key={tag}>{toTitleCase(tag)}</Badge>
           ))}
         </div>
-
-        <p className="text-sm leading-relaxed text-slate-300">{district.symbolism}</p>
 
         <div className="grid grid-cols-2 gap-3 text-sm text-slate-300">
           <div className="rounded-lg border border-slate-800/70 bg-slate-900/70 p-3">

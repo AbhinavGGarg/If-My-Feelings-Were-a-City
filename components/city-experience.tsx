@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { RefreshCcw, Sparkles } from "lucide-react";
+import { BookOpen, RefreshCcw } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -24,9 +24,12 @@ export function CityExperience() {
   useEffect(() => {
     const stored = loadCityModel();
     const cityModel = stored ?? buildDemoCity();
+    const dominantEmotion = cityModel.dominantForces[0]?.emotion;
+    const dominantDistrict = cityModel.districts.find((district) => district.anchorEmotion === dominantEmotion) ?? cityModel.districts[0];
+
     const frame = window.requestAnimationFrame(() => {
       setCity(cityModel);
-      setSelectedDistrict(cityModel.districts[0]);
+      setSelectedDistrict(dominantDistrict);
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -45,6 +48,15 @@ export function CityExperience() {
     });
   }, [city]);
 
+  const dominantDistrictId = useMemo(() => {
+    if (!city) {
+      return "";
+    }
+
+    const dominantEmotion = city.dominantForces[0]?.emotion;
+    return city.districts.find((district) => district.anchorEmotion === dominantEmotion)?.id ?? city.districts[0].id;
+  }, [city]);
+
   if (!city || !selectedDistrict) {
     return (
       <div className="mx-auto max-w-7xl px-6 py-16">
@@ -58,7 +70,7 @@ export function CityExperience() {
   }
 
   return (
-    <div className="mx-auto max-w-[1220px] space-y-8 px-6 py-10">
+    <div className="mx-auto max-w-[1220px] space-y-6 px-6 py-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -90,11 +102,26 @@ export function CityExperience() {
         </div>
       </motion.div>
 
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
+        <Card className="border-slate-700/80 bg-slate-950/60">
+          <CardContent className="space-y-2 p-4 text-sm text-slate-200">
+            <p className="flex items-center gap-2 text-slate-100">
+              <BookOpen className="h-4 w-4 text-sky-300" />
+              <span className="font-medium">How to read your city</span>
+            </p>
+            <p>District shape and color represent your strongest emotional forces.</p>
+            <p>Road flow, weather, and lighting show pressure, energy, and emotional atmosphere.</p>
+            <p>Click or hover districts to see what each area symbolizes in plain language.</p>
+          </CardContent>
+        </Card>
+      </motion.div>
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,2.1fr)_minmax(0,1fr)]">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <CityMap
             city={city}
             selectedDistrictId={selectedDistrict.id}
+            dominantDistrictId={dominantDistrictId}
             onSelectDistrict={(district) => setSelectedDistrict(district)}
           />
         </motion.div>
@@ -105,21 +132,12 @@ export function CityExperience() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.16 }}
         >
-          <DistrictDetailsPanel city={city} district={selectedDistrict} />
+          <DistrictDetailsPanel
+            city={city}
+            district={selectedDistrict}
+            isDominant={selectedDistrict.id === dominantDistrictId}
+          />
           <CityLegend city={city} />
-
-          <Card className="border-amber-500/30 bg-amber-400/5">
-            <CardContent className="p-4 text-sm text-amber-100">
-              <p className="mb-2 flex items-center gap-2 font-medium">
-                <Sparkles className="h-4 w-4" />
-                Emotional Interpretation Layer
-              </p>
-              <p>
-                Your free-text reflection was translated into a normalized multi-emotion vector, then mapped to visual systems
-                (district form, weather, roads, lighting) and real-world action guidance.
-              </p>
-            </CardContent>
-          </Card>
         </motion.div>
       </div>
 
