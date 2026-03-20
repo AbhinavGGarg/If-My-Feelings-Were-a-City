@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { BookOpen, RefreshCcw } from "lucide-react";
+import { BookOpen, BookmarkPlus, RefreshCcw } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -13,12 +13,13 @@ import { EmotionalInsights } from "@/components/emotional-insights";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { buildDemoCity } from "@/lib/demo-seed";
-import { clearCityModel, loadCityModel } from "@/lib/storage";
+import { clearCityModel, loadCityModel, loadLocalSession, saveCityToLibrary } from "@/lib/storage";
 import type { CityModel, District } from "@/lib/types";
 
 export function CityExperience() {
   const [city, setCity] = useState<CityModel | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<District | null>(null);
+  const [saveMessage, setSaveMessage] = useState("");
   const router = useRouter();
 
   useEffect(() => {
@@ -86,6 +87,20 @@ export function CityExperience() {
 
           <div className="flex items-center gap-2">
             <Button
+              onClick={() => {
+                const session = loadLocalSession();
+                const dominant = city.dominantForces[0]?.emotion ?? "City";
+                saveCityToLibrary(city, {
+                  ownerEmail: session?.email,
+                  name: `${dominant.toUpperCase()} • ${new Date().toLocaleDateString()}`,
+                });
+                setSaveMessage(session ? "Saved to your city library." : "Saved locally. Log in to organize saved cities.");
+              }}
+            >
+              <BookmarkPlus className="mr-2 h-4 w-4" />
+              Save city
+            </Button>
+            <Button
               variant="outline"
               onClick={() => {
                 clearCityModel();
@@ -98,8 +113,12 @@ export function CityExperience() {
             <Button variant="ghost" asChild>
               <Link href="/start">Edit prompts</Link>
             </Button>
+            <Button variant="ghost" asChild>
+              <Link href="/saved">Saved cities</Link>
+            </Button>
           </div>
         </div>
+        {saveMessage && <p className="text-sm text-emerald-200">{saveMessage}</p>}
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>

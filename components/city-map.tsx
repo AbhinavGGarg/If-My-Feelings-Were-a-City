@@ -131,6 +131,15 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
 
         <rect x="0" y="0" width="1040" height="620" fill="url(#cityGlow)" />
         <rect x="0" y="0" width="1040" height="620" fill="url(#sunrise)" />
+        <g opacity={0.15}>
+          <ellipse cx="180" cy="520" rx="220" ry="120" fill="#68a5d8" />
+          <ellipse cx="880" cy="100" rx="180" ry="80" fill="#79b6d4" />
+        </g>
+        <path
+          d="M -20 500 C 140 450 240 540 420 500 C 600 460 700 550 1060 470 L 1060 620 L -20 620 Z"
+          fill="#2c4f6a"
+          opacity={0.18}
+        />
 
         {city.roads.map((road) => {
           const from = city.districts.find((district) => district.id === road.fromDistrictId);
@@ -213,6 +222,16 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
                 rx={20}
                 fill={style.glow}
                 opacity={selected ? 0.24 : dominant ? 0.18 : 0.1}
+              />
+
+              <rect
+                x={district.x + 12}
+                y={district.y + 11}
+                width={dominant ? 148 : 132}
+                height={dominant ? 42 : 28}
+                rx={8}
+                fill="#08111b"
+                opacity={0.5}
               />
 
               <text

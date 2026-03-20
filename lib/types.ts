@@ -140,3 +140,25 @@ export interface CityModel {
   needsText: string;
   actionSuggestions: ActionSuggestion[];
 }
+
+export interface LocalUser {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  createdAt: string;
+}
+
+export interface LocalSession {
+  userId: string;
+  name: string;
+  email: string;
+}
+
+export interface SavedCityRecord {
+  id: string;
+  name: string;
+  ownerEmail: string;
+  createdAt: string;
+  city: CityModel;
+}

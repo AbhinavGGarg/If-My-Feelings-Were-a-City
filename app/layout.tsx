@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Manrope } from "next/font/google";
 
+import { SiteHeader } from "@/components/site-header";
+
 import "./globals.css";
 
 const serif = Cormorant_Garamond({
@@ -28,7 +30,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${serif.variable} ${sans.variable} antialiased`}>{children}</body>
+      <body className={`${serif.variable} ${sans.variable} antialiased`}>
+        <SiteHeader />
+        {children}
+      </body>
     </html>
   );
 }
