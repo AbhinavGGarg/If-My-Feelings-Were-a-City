@@ -32,6 +32,17 @@ export interface PromptAnswers {
   cityPace: "slow" | "steady" | "fast";
 }
 
+export type PromptDraftAnswers = Omit<PromptAnswers, "dominantEmotion" | "cityPace"> & {
+  dominantEmotion: PromptAnswers["dominantEmotion"] | "";
+  cityPace: PromptAnswers["cityPace"] | "";
+};
+
+export interface PromptDraftState {
+  step: number;
+  answers: PromptDraftAnswers;
+  updatedAt: string;
+}
+
 export interface EmotionalProfile {
   vector: EmotionVector;
   dominantEmotions: Array<{

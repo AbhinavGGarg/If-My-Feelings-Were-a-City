@@ -1,4 +1,4 @@
-import type { EmotionKey, PromptAnswers } from "@/lib/types";
+import type { EmotionKey, PromptAnswers, PromptDraftAnswers } from "@/lib/types";
 
 export interface PromptStep {
   id: keyof PromptAnswers;
@@ -94,4 +94,15 @@ export const defaultAnswers: PromptAnswers = {
   avoidRevisiting: "A conversation I keep postponing",
   keepsYouGoing: "The belief that this chapter can still become meaningful",
   cityPace: "fast",
+};
+
+export const blankPromptDraftAnswers: PromptDraftAnswers = {
+  reflection: "",
+  dominantEmotion: "",
+  underConstruction: "",
+  feelsEmpty: "",
+  feelsAlive: "",
+  avoidRevisiting: "",
+  keepsYouGoing: "",
+  cityPace: "",
 };

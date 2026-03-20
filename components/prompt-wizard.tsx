@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,32 +13,17 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { generateCityModel } from "@/lib/city-generator";
 import { inferEmotionalProfile } from "@/lib/emotion-engine";
-import { defaultAnswers, emotionOptions, paceOptions, promptSteps } from "@/lib/prompts";
-import { saveCityModel } from "@/lib/storage";
-import type { PromptAnswers } from "@/lib/types";
+import { blankPromptDraftAnswers, defaultAnswers, emotionOptions, paceOptions, promptSteps } from "@/lib/prompts";
+import { clearPromptDraft, loadPromptDraft, saveCityModel, savePromptDraft } from "@/lib/storage";
+import type { PromptAnswers, PromptDraftAnswers } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-type PromptDraftAnswers = Omit<PromptAnswers, "dominantEmotion" | "cityPace"> & {
-  dominantEmotion: PromptAnswers["dominantEmotion"] | "";
-  cityPace: PromptAnswers["cityPace"] | "";
-};
-
-const blankAnswers: PromptDraftAnswers = {
-  reflection: "",
-  dominantEmotion: "",
-  underConstruction: "",
-  feelsEmpty: "",
-  feelsAlive: "",
-  avoidRevisiting: "",
-  keepsYouGoing: "",
-  cityPace: "",
-};
 
 export function PromptWizard() {
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<PromptDraftAnswers>(blankAnswers);
+  const [answers, setAnswers] = useState<PromptDraftAnswers>(blankPromptDraftAnswers);
   const [touched, setTouched] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
   const router = useRouter();
 
   const current = promptSteps[step];
@@ -57,6 +42,36 @@ export function PromptWizard() {
     setTouched(false);
   };
 
+  useEffect(() => {
+    const draft = loadPromptDraft();
+    const frame = window.requestAnimationFrame(() => {
+      if (draft) {
+        setAnswers({
+          ...blankPromptDraftAnswers,
+          ...draft.answers,
+        });
+
+        const safeStep = Number.isFinite(draft.step) ? draft.step : 0;
+        setStep(Math.min(Math.max(safeStep, 0), promptSteps.length - 1));
+      }
+      setIsHydrated(true);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    savePromptDraft({
+      step,
+      answers,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [step, answers, isHydrated]);
+
   const onNext = () => {
     if (!isCurrentStepValid) {
       setTouched(true);
@@ -73,6 +88,7 @@ export function PromptWizard() {
     const profile = inferEmotionalProfile(input);
     const city = generateCityModel(profile, input);
     saveCityModel(city);
+    clearPromptDraft();
     router.push("/city");
   };
 
@@ -218,6 +234,8 @@ export function PromptWizard() {
             )}
           </div>
         </div>
+
+        <p className="text-xs text-slate-400">Draft auto-saves while you type.</p>
       </CardContent>
     </Card>
   );
