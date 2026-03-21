@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { districtDisplayName, districtPlainMeaning } from "@/lib/emotion-copy";
-import type { Building, CityModel, District, EmotionKey, Landmark, LightingState, WeatherState } from "@/lib/types";
+import type { CityModel, District, EmotionKey, Landmark, LightingState, WeatherState } from "@/lib/types";
 
 interface CityMapProps {
   city: CityModel;
@@ -51,24 +51,25 @@ function renderWeatherOverlay(weather: WeatherState) {
     return null;
   }
 
-  if (weather === "fog" || weather === "mist") {
+  if (weather === "fog" || weather === "mist" || weather === "drizzle") {
     return (
       <g pointerEvents="none">
-        <ellipse cx="220" cy="120" rx="210" ry="90" fill="#c7d8e4" fillOpacity={weather === "fog" ? 0.08 : 0.05} />
-        <ellipse cx="810" cy="160" rx="240" ry="120" fill="#d2dfe8" fillOpacity={weather === "fog" ? 0.07 : 0.045} />
-        <ellipse cx="520" cy="540" rx="320" ry="110" fill="#d2dce7" fillOpacity={weather === "fog" ? 0.06 : 0.04} />
+        <rect x="0" y="0" width="1040" height="620" fill="#bfd4e5" fillOpacity={weather === "fog" ? 0.07 : weather === "mist" ? 0.05 : 0.03} />
+        <ellipse cx="220" cy="120" rx="210" ry="90" fill="#c7d8e4" fillOpacity={weather === "fog" ? 0.06 : 0.035} />
+        <ellipse cx="810" cy="160" rx="240" ry="120" fill="#d2dfe8" fillOpacity={weather === "fog" ? 0.05 : 0.03} />
+        <ellipse cx="520" cy="540" rx="320" ry="110" fill="#d2dce7" fillOpacity={weather === "fog" ? 0.045 : 0.025} />
       </g>
     );
   }
 
-  const streakCount = weather === "rain" ? 58 : 34;
-  const strokeOpacity = weather === "rain" ? 0.24 : 0.15;
+  const streakCount = 18;
+  const strokeOpacity = 0.12;
   return (
     <g pointerEvents="none">
       {Array.from({ length: streakCount }).map((_, index) => {
-        const x = ((index * 73) % 1040) + 8;
+        const x = ((index * 97) % 1040) + 8;
         const y = (index * 37) % 620;
-        const len = weather === "rain" ? 18 + (index % 4) * 4 : 10 + (index % 3) * 3;
+        const len = 14 + (index % 3) * 3;
         return (
           <line
             key={`weather-${index}`}
@@ -78,7 +79,7 @@ function renderWeatherOverlay(weather: WeatherState) {
             y2={y + len}
             stroke="#b8d6eb"
             strokeOpacity={strokeOpacity}
-            strokeWidth={weather === "rain" ? 1.4 : 1}
+            strokeWidth={1.2}
             strokeLinecap="round"
           />
         );
@@ -102,28 +103,6 @@ function lightingTint(lighting: LightingState) {
     default:
       return "radial-gradient(circle at 50% 0%, rgba(140,160,184,0.08), transparent 40%)";
   }
-}
-
-function buildingFill(building: Building) {
-  if (building.type === "abandoned") {
-    return "#7b7f86";
-  }
-  if (building.type === "tower") {
-    return "#c6d4ef";
-  }
-  if (building.type === "construction") {
-    return "#d8bf86";
-  }
-  if (building.type === "park") {
-    return "#88ccae";
-  }
-  if (building.type === "station") {
-    return "#a8bfd3";
-  }
-  if (building.type === "memorial") {
-    return "#cfcfd8";
-  }
-  return "#acc2d7";
 }
 
 function landmarkGlyph(kind: Landmark["kind"]) {
@@ -156,18 +135,34 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
   const dominantDistrict = city.districts.find((district) => district.id === dominantDistrictId) ?? city.districts[0];
   const dominantDistrictLabel = districtDisplayName(dominantDistrict.anchorEmotion);
 
-  const buildingsByDistrict = useMemo(() => {
-    const byDistrict = new Map<string, Building[]>();
+  const buildingDensityByDistrict = useMemo(() => {
+    const byDistrict = new Map<string, number>();
+    for (const district of city.districts) {
+      byDistrict.set(district.id, 0);
+    }
     for (const building of city.buildings) {
-      const list = byDistrict.get(building.districtId) ?? [];
-      list.push(building);
-      byDistrict.set(building.districtId, list);
+      byDistrict.set(building.districtId, (byDistrict.get(building.districtId) ?? 0) + 1);
     }
     return byDistrict;
-  }, [city.buildings]);
+  }, [city.buildings, city.districts]);
+
+  const maxBuildingCount = useMemo(
+    () =>
+      Math.max(
+        1,
+        ...city.districts.map((district) => buildingDensityByDistrict.get(district.id) ?? 0),
+      ),
+    [buildingDensityByDistrict, city.districts],
+  );
 
   const districtsOrdered = useMemo(() => {
     return [...city.districts].sort((a, b) => {
+      if (a.id === selectedDistrictId) {
+        return 1;
+      }
+      if (b.id === selectedDistrictId) {
+        return -1;
+      }
       if (a.id === dominantDistrictId) {
         return 1;
       }
@@ -176,7 +171,15 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
       }
       return a.id.localeCompare(b.id);
     });
-  }, [city.districts, dominantDistrictId]);
+  }, [city.districts, dominantDistrictId, selectedDistrictId]);
+
+  const visibleRoads = useMemo(
+    () =>
+      [...city.roads]
+        .sort((a, b) => b.congestion + b.width * 0.05 - (a.congestion + a.width * 0.05))
+        .slice(0, 6),
+    [city.roads],
+  );
 
   const lightingLayer = lightingTint(city.lighting);
 
@@ -186,13 +189,8 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
       <svg viewBox="0 0 1040 620" className="h-full w-full">
         <defs>
           <pattern id="city-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#35506a" strokeOpacity="0.16" strokeWidth="1" />
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#35506a" strokeOpacity="0.1" strokeWidth="1" />
           </pattern>
-          {city.districts.map((district) => (
-            <clipPath key={`clip-${district.id}`} id={`district-clip-${district.id}`}>
-              <rect x={district.x + 8} y={district.y + 12} width={district.width - 16} height={district.height - 20} rx={14} />
-            </clipPath>
-          ))}
         </defs>
 
         <rect x="0" y="0" width="1040" height="620" fill="#0a1623" />
@@ -200,7 +198,7 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
 
         {renderWeatherOverlay(city.weather)}
 
-        {city.roads.slice(0, 9).map((road) => {
+        {visibleRoads.map((road) => {
           const from = city.districts.find((district) => district.id === road.fromDistrictId);
           const to = city.districts.find((district) => district.id === road.toDistrictId);
           if (!from || !to) {
@@ -208,22 +206,24 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
           }
 
           const d = roadPath(from, to, road.curvedOffset);
-          const glowWidth = Math.max(road.width * 0.75, 3.8);
-          const mainWidth = Math.max(road.width * 0.48, 2.4);
+          const activeLink = road.fromDistrictId === activeDistrict.id || road.toDistrictId === activeDistrict.id;
+          const glowWidth = Math.max(road.width * (activeLink ? 0.68 : 0.52), 3.2);
+          const mainWidth = Math.max(road.width * (activeLink ? 0.46 : 0.34), 2.1);
           const stalled = road.isStalled;
           const tint = stalled ? "#c6d1dc" : "#8cc4ea";
+          const tintOpacity = activeLink ? 0.3 + road.congestion * 0.33 : 0.14 + road.congestion * 0.2;
 
           return (
             <g key={road.id}>
-              <path d={d} stroke="#1f3749" strokeWidth={glowWidth} strokeOpacity={0.5} fill="none" strokeLinecap="round" />
+              <path d={d} stroke="#1f3749" strokeWidth={glowWidth} strokeOpacity={activeLink ? 0.5 : 0.34} fill="none" strokeLinecap="round" />
               <path
                 d={d}
                 stroke={tint}
                 strokeWidth={mainWidth}
-                strokeOpacity={0.22 + road.congestion * 0.42}
+                strokeOpacity={tintOpacity}
                 fill="none"
                 strokeLinecap="round"
-                strokeDasharray={stalled ? "7 8" : undefined}
+                strokeDasharray={stalled ? "6 7" : undefined}
               />
             </g>
           );
@@ -233,16 +233,17 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
           const style = emotionStyles[district.anchorEmotion];
           const selected = district.id === selectedDistrictId;
           const dominant = district.id === dominantDistrictId;
+          const hovered = district.id === hoveredDistrictId;
           const score = Math.round(city.emotionalProfile.vector[district.anchorEmotion] * 100);
+          const buildingCount = buildingDensityByDistrict.get(district.id) ?? 0;
+          const densityPercent = Math.round((buildingCount / maxBuildingCount) * 100);
           const districtLabel = districtDisplayName(district.anchorEmotion);
 
-          const expansion = dominant ? 16 : selected ? 8 : 0;
+          const expansion = dominant ? 18 : selected ? 10 : hovered ? 6 : 0;
           const x = district.x - expansion / 2;
           const y = district.y - expansion / 2;
           const width = district.width + expansion;
           const height = district.height + expansion;
-
-          const districtBuildings = (buildingsByDistrict.get(district.id) ?? []).slice(0, 20);
 
           return (
             <g
@@ -259,7 +260,7 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
                 height={height + 8}
                 rx={24}
                 fill={style.tint}
-                fillOpacity={dominant ? 0.22 : selected ? 0.12 : 0}
+                fillOpacity={dominant ? 0.28 : selected || hovered ? 0.14 : 0}
               />
 
               <rect
@@ -269,10 +270,10 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
                 height={height}
                 rx={22}
                 fill={style.fill}
-                fillOpacity={dominant ? 0.9 : selected ? 0.78 : 0.5}
+                fillOpacity={dominant ? 0.88 : selected || hovered ? 0.76 : 0.48}
                 stroke={style.stroke}
-                strokeWidth={dominant ? 3.1 : selected ? 2.2 : 1.4}
-                strokeOpacity={dominant ? 1 : selected ? 0.9 : 0.62}
+                strokeWidth={dominant ? 3.2 : selected || hovered ? 2.3 : 1.3}
+                strokeOpacity={dominant ? 1 : selected || hovered ? 0.88 : 0.54}
               />
 
               <rect x={x + 10} y={y + 10} width={width - 20} height={34} rx={9} fill="#111c28" fillOpacity={0.66} />
@@ -291,40 +292,20 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
                 </text>
               )}
 
-              <g clipPath={`url(#district-clip-${district.id})`}>
-                {districtBuildings.map((building, index) => {
-                  const baseY = Math.min(district.y + district.height - 14, building.y);
-                  const topY = Math.max(district.y + 56, baseY - building.height);
-                  const heightSafe = Math.max(4, baseY - topY);
-                  const fill = buildingFill(building);
-                  const opacity = building.type === "abandoned" ? 0.36 : 0.18 + building.intensity * 0.42;
+              <text x={x + 20} y={y + height - 28} className="fill-slate-200 text-[12px] uppercase tracking-[0.12em]" opacity={0.9}>
+                Urban density
+              </text>
 
-                  return (
-                    <g key={building.id}>
-                      <rect
-                        x={building.x}
-                        y={topY}
-                        width={building.width}
-                        height={heightSafe}
-                        rx={1.6}
-                        fill={fill}
-                        fillOpacity={opacity}
-                      />
-                      {building.flicker && index % 2 === 0 && (
-                        <rect
-                          x={building.x + 2}
-                          y={topY + 3}
-                          width={Math.max(2, building.width - 4)}
-                          height={2}
-                          rx={1}
-                          fill="#f4e4be"
-                          fillOpacity={0.42}
-                        />
-                      )}
-                    </g>
-                  );
-                })}
-              </g>
+              <rect x={x + 20} y={y + height - 18} width={width - 40} height={6} rx={3} fill="#10202f" fillOpacity={0.72} />
+              <rect
+                x={x + 20}
+                y={y + height - 18}
+                width={(width - 40) * (densityPercent / 100)}
+                height={6}
+                rx={3}
+                fill={style.stroke}
+                fillOpacity={0.9}
+              />
             </g>
           );
         })}
@@ -348,6 +329,7 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
         <div className="max-w-[74%] space-y-1 rounded-md border border-slate-700/80 bg-slate-950/78 px-3 py-2.5 text-sm text-slate-100">
           <p>{districtPlainMeaning(districtDisplayName(activeDistrict.anchorEmotion), activeDistrict.anchorEmotion)}</p>
           <p className="text-xs text-slate-300">{activeDistrict.description}</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Hover or click a district to inspect it.</p>
         </div>
         <div className="space-y-1">
           <div className="rounded-md border border-amber-300/40 bg-amber-300/10 px-2.5 py-1 text-xs uppercase tracking-[0.14em] text-amber-100">
@@ -360,7 +342,7 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
       </div>
 
       <div className="pointer-events-none absolute bottom-3 left-4 rounded-md border border-slate-700/70 bg-slate-950/76 px-3 py-1.5 text-xs text-slate-300">
-        {city.districts.length} districts • {city.roads.length} links • {city.landmarks.length} landmarks
+        {city.districts.length} districts • {visibleRoads.length} active links • {city.landmarks.length} landmarks
       </div>
     </div>
   );

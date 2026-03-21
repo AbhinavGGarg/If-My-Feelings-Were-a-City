@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { CityLegend } from "@/components/city-legend";
 import { CityMap } from "@/components/city-map";
 import { DistrictDetailsPanel } from "@/components/district-details-panel";
 import { EmotionalInsights } from "@/components/emotional-insights";
@@ -156,7 +155,6 @@ export function CityExperience() {
             district={selectedDistrict}
             isDominant={selectedDistrict.id === dominantDistrictId}
           />
-          <CityLegend city={city} />
         </motion.div>
       </div>
 
