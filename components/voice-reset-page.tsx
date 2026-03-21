@@ -11,6 +11,9 @@ import { buildVoiceResetScript, pickCalmVoice, voiceResetModes } from "@/lib/voi
 import { cn } from "@/lib/utils";
 
 type VoiceStatus = "idle" | "playing" | "paused";
+type VoiceProvider = "checking" | "elevenlabs" | "browser";
+
+const lineGapMs = 2300;
 
 function CalmWave({ active }: { active: boolean }) {
   return (
@@ -40,78 +43,168 @@ export function VoiceResetPage() {
   const [selectedModeId, setSelectedModeId] = useState(voiceResetModes[0].id);
   const [customTopic, setCustomTopic] = useState("");
   const [status, setStatus] = useState<VoiceStatus>("idle");
+  const [provider, setProvider] = useState<VoiceProvider>("checking");
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [scriptLines, setScriptLines] = useState<string[]>([]);
-  const [currentLineIndex, setCurrentLineIndex] = useState<number>(-1);
+  const [currentLineText, setCurrentLineText] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
   const linesRef = useRef<string[]>([]);
-  const canceledRef = useRef(false);
+  const sessionIdRef = useRef(0);
+  const nextIndexRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const gapTimerRef = useRef<number | null>(null);
 
   const selectedMode = useMemo(
     () => voiceResetModes.find((mode) => mode.id === selectedModeId) ?? voiceResetModes[0],
     [selectedModeId],
   );
 
-  const currentLine = currentLineIndex >= 0 ? scriptLines[currentLineIndex] : "";
-
-  const stopSession = () => {
-    if (typeof window === "undefined") {
-      return;
+  const clearGapTimer = () => {
+    if (gapTimerRef.current) {
+      window.clearTimeout(gapTimerRef.current);
+      gapTimerRef.current = null;
     }
-
-    canceledRef.current = true;
-    window.speechSynthesis.cancel();
-    setStatus("idle");
-    setCurrentLineIndex(-1);
   };
 
-  const speakFrom = (startIndex: number) => {
+  const clearAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current = null;
+    }
+
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+  };
+
+  const hardCancelPlayback = () => {
+    clearGapTimer();
+    clearAudio();
+
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  };
+
+  const stopSession = () => {
+    sessionIdRef.current += 1;
+    hardCancelPlayback();
+    setStatus("idle");
+    setCurrentLineText("");
+  };
+
+  const fetchElevenLabsLineAudio = async (text: string) => {
+    const response = await fetch("/api/voice-reset/tts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`TTS failed with status ${response.status}`);
+    }
+
+    return await response.blob();
+  };
+
+  const scheduleNextLine = (sessionId: number) => {
+    clearGapTimer();
+    gapTimerRef.current = window.setTimeout(() => {
+      if (sessionIdRef.current !== sessionId) {
+        return;
+      }
+      void playLine(sessionId, nextIndexRef.current);
+    }, lineGapMs);
+  };
+
+  const playLineWithBrowserVoice = (sessionId: number, line: string, index: number) => {
     if (typeof window === "undefined") {
       return;
     }
 
-    const lines = linesRef.current;
-    if (startIndex >= lines.length) {
-      setStatus("idle");
-      setCurrentLineIndex(-1);
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(lines[startIndex]);
+    const utterance = new SpeechSynthesisUtterance(line);
     const calmVoice = pickCalmVoice(voices);
 
     if (calmVoice) {
       utterance.voice = calmVoice;
     }
 
-    utterance.rate = 0.84;
-    utterance.pitch = 0.92;
-    utterance.volume = 0.9;
-
-    utterance.onstart = () => {
-      setCurrentLineIndex(startIndex);
-    };
+    utterance.rate = 0.8;
+    utterance.pitch = 0.9;
+    utterance.volume = 0.92;
 
     utterance.onend = () => {
-      if (canceledRef.current || status === "paused") {
+      if (sessionIdRef.current !== sessionId || status !== "playing") {
         return;
       }
-
-      window.setTimeout(() => {
-        if (!canceledRef.current) {
-          speakFrom(startIndex + 1);
-        }
-      }, 500);
+      nextIndexRef.current = index + 1;
+      scheduleNextLine(sessionId);
     };
 
     utterance.onerror = () => {
       setErrorMessage("Voice playback was interrupted. Try starting again.");
-      setStatus("idle");
-      setCurrentLineIndex(-1);
+      stopSession();
     };
 
     window.speechSynthesis.speak(utterance);
+  };
+
+  const playLine = async (sessionId: number, index: number) => {
+    if (sessionIdRef.current !== sessionId) {
+      return;
+    }
+
+    const lines = linesRef.current;
+
+    if (index >= lines.length) {
+      setStatus("idle");
+      setCurrentLineText("Session complete. You can replay or choose another scene.");
+      return;
+    }
+
+    const line = lines[index];
+    setCurrentLineText(line);
+
+    if (provider === "elevenlabs") {
+      try {
+        const blob = await fetchElevenLabsLineAudio(line);
+        if (sessionIdRef.current !== sessionId) {
+          return;
+        }
+
+        clearAudio();
+        const url = URL.createObjectURL(blob);
+        audioUrlRef.current = url;
+        const audio = new Audio(url);
+        audioRef.current = audio;
+
+        audio.onended = () => {
+          if (sessionIdRef.current !== sessionId || status !== "playing") {
+            return;
+          }
+          nextIndexRef.current = index + 1;
+          scheduleNextLine(sessionId);
+        };
+
+        audio.onerror = () => {
+          playLineWithBrowserVoice(sessionId, line, index);
+        };
+
+        await audio.play();
+        return;
+      } catch {
+        playLineWithBrowserVoice(sessionId, line, index);
+        return;
+      }
+    }
+
+    playLineWithBrowserVoice(sessionId, line, index);
   };
 
   const startSession = () => {
@@ -124,40 +217,66 @@ export function VoiceResetPage() {
       return;
     }
 
-    canceledRef.current = false;
-    setErrorMessage("");
-    window.speechSynthesis.cancel();
+    const sessionId = sessionIdRef.current + 1;
+    sessionIdRef.current = sessionId;
 
-    const nextLines = buildVoiceResetScript(selectedMode, customTopic);
-    linesRef.current = nextLines;
-    setScriptLines(nextLines);
+    hardCancelPlayback();
+    setErrorMessage("");
     setStatus("playing");
-    speakFrom(0);
+
+    const scriptLines = buildVoiceResetScript(selectedMode, customTopic);
+    linesRef.current = scriptLines;
+    nextIndexRef.current = 0;
+
+    void playLine(sessionId, 0);
   };
 
   const pauseSession = () => {
-    if (typeof window === "undefined") {
+    if (status !== "playing") {
       return;
     }
 
-    window.speechSynthesis.pause();
+    clearGapTimer();
+
+    if (provider === "elevenlabs") {
+      audioRef.current?.pause();
+    } else if (typeof window !== "undefined") {
+      window.speechSynthesis.pause();
+    }
+
     setStatus("paused");
   };
 
   const resumeSession = () => {
-    if (typeof window === "undefined") {
+    if (status !== "paused") {
       return;
     }
 
-    window.speechSynthesis.resume();
     setStatus("playing");
+
+    if (provider === "elevenlabs") {
+      if (audioRef.current && audioRef.current.paused && audioRef.current.currentTime > 0) {
+        void audioRef.current.play();
+      } else {
+        void playLine(sessionIdRef.current, nextIndexRef.current);
+      }
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      } else {
+        void playLine(sessionIdRef.current, nextIndexRef.current);
+      }
+    }
   };
 
   const replaySession = () => {
     stopSession();
     window.setTimeout(() => {
       startSession();
-    }, 120);
+    }, 150);
   };
 
   useEffect(() => {
@@ -175,8 +294,29 @@ export function VoiceResetPage() {
     return () => {
       window.cancelAnimationFrame(frame);
       window.speechSynthesis.removeEventListener("voiceschanged", updateVoices);
-      window.speechSynthesis.cancel();
+      hardCancelPlayback();
     };
+    // hardCancelPlayback is intentionally stable enough for cleanup in this mount-only effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const checkProvider = async () => {
+      try {
+        const response = await fetch("/api/voice-reset/tts", { cache: "no-store" });
+        if (!response.ok) {
+          setProvider("browser");
+          return;
+        }
+
+        const data = (await response.json()) as { available?: boolean };
+        setProvider(data.available ? "elevenlabs" : "browser");
+      } catch {
+        setProvider("browser");
+      }
+    };
+
+    void checkProvider();
   }, []);
 
   return (
@@ -236,7 +376,9 @@ export function VoiceResetPage() {
               <CardTitle className="flex items-center gap-2">
                 <Volume2 className="h-5 w-5 text-sky-300" /> Session controls
               </CardTitle>
-              <CardDescription>Calm pace, soft pauses, and gentle wording.</CardDescription>
+              <CardDescription>
+                Calm pace with 2.3-second pauses between lines. Provider: {provider === "checking" ? "Checking..." : provider}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-lg border border-slate-800/70 bg-slate-900/70 p-3">
@@ -269,14 +411,12 @@ export function VoiceResetPage() {
 
               <div className="rounded-lg border border-slate-800/70 bg-slate-900/65 p-3">
                 <p className="mb-1 text-xs uppercase tracking-[0.16em] text-slate-400">Now speaking</p>
-                <p className="text-sm text-slate-200">{currentLine || "Press Start to begin your guided reset."}</p>
+                <p className="text-sm text-slate-200">{currentLineText || "Press Start to begin your guided reset."}</p>
               </div>
 
               {errorMessage && <p className="text-sm text-rose-300">{errorMessage}</p>}
 
-              <p className="text-xs text-slate-400">
-                Tip: Headphones and a quiet room make this feel smoother.
-              </p>
+              <p className="text-xs text-slate-400">Tip: Headphones and a quiet room make this feel smoother.</p>
             </CardContent>
           </Card>
         </div>
