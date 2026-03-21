@@ -15,16 +15,16 @@ type VoiceEngine = "browser" | "featherless";
 
 const lineGapMs = 1000;
 const defaultCloudModel = "recursal/QRWKV6-32B-Instruct-Preview-v0.1";
-const cloudVoices = [
-  "Darok/america",
-  "Darok/joshua",
-  "Darok/paola",
-  "Darok/jessica",
-  "Darok/grace",
-  "Darok/maya",
-  "Darok/knightley",
-  "Darok/myriam",
-  "Darok/tommy",
+const cloudVoiceOptions = [
+  { id: "Darok/grace", label: "Grace", description: "Very gentle, soft, and slow. Best for winding down." },
+  { id: "Darok/maya", label: "Maya", description: "Warm and supportive, with balanced pacing." },
+  { id: "Darok/jessica", label: "Jessica", description: "Clear and soothing, good for guided reflection." },
+  { id: "Darok/myriam", label: "Myriam", description: "Calm and grounded, with softer emotional tone." },
+  { id: "Darok/paola", label: "Paola", description: "Warm conversational voice, easy to listen to." },
+  { id: "Darok/america", label: "America", description: "Neutral and steady, smooth for long sessions." },
+  { id: "Darok/joshua", label: "Joshua", description: "Lower and stable tone, good for grounding." },
+  { id: "Darok/tommy", label: "Tommy", description: "Relaxed and clear, moderate warmth." },
+  { id: "Darok/knightley", label: "Knightley", description: "Measured and deliberate, slightly formal." },
 ];
 
 type CloudPendingRequest = {
@@ -32,6 +32,27 @@ type CloudPendingRequest = {
   reject: (error: Error) => void;
   timeoutId: number;
 };
+
+function describeBrowserVoice(voice: SpeechSynthesisVoice) {
+  const name = voice.name.toLowerCase();
+
+  if (/samantha|ava|serena|allison|olivia|grace|maya|jenny|zira|aria|libby|female|woman/.test(name)) {
+    return "Softer and warm tone";
+  }
+  if (/david|daniel|joshua|tom|mark|male|man|guy/.test(name)) {
+    return "Lower and steady tone";
+  }
+  if (/google/.test(name)) {
+    return "Clear neutral narration";
+  }
+  if (/microsoft/.test(name)) {
+    return "Natural conversational pacing";
+  }
+  if (voice.localService) {
+    return "On-device stable playback";
+  }
+  return "Calm reflective narration";
+}
 
 function CalmWave({ active }: { active: boolean }) {
   return (
@@ -95,6 +116,18 @@ export function VoiceResetPage() {
     }
     return pickCalmVoice(voices);
   }, [voices, selectedVoiceUri]);
+
+  const selectedCloudVoiceOption = useMemo(
+    () => cloudVoiceOptions.find((voice) => voice.id === selectedCloudVoice) ?? cloudVoiceOptions[0],
+    [selectedCloudVoice],
+  );
+
+  const selectedBrowserVoiceDescription = useMemo(() => {
+    if (!selectedBrowserVoice) {
+      return "";
+    }
+    return `${selectedBrowserVoice.name} (${selectedBrowserVoice.lang}) - ${describeBrowserVoice(selectedBrowserVoice)}`;
+  }, [selectedBrowserVoice]);
 
   const clearGapTimer = () => {
     if (gapTimerRef.current) {
@@ -676,10 +709,13 @@ export function VoiceResetPage() {
                       .filter((voice) => voice.lang.toLowerCase().startsWith("en"))
                       .map((voice) => (
                         <option key={voice.voiceURI} value={voice.voiceURI} className="bg-slate-900 text-slate-100">
-                          {voice.name} ({voice.lang})
+                          {voice.name} ({voice.lang}) - {describeBrowserVoice(voice)}
                         </option>
                       ))}
                   </select>
+                  {selectedBrowserVoiceDescription && (
+                    <p className="text-xs text-slate-400">Selected: {selectedBrowserVoiceDescription}</p>
+                  )}
                 </div>
               )}
 
@@ -691,12 +727,13 @@ export function VoiceResetPage() {
                     onChange={(event) => setSelectedCloudVoice(event.target.value)}
                     className="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-300"
                   >
-                    {cloudVoices.map((voiceName) => (
-                      <option key={voiceName} value={voiceName} className="bg-slate-900 text-slate-100">
-                        {voiceName}
+                    {cloudVoiceOptions.map((voice) => (
+                      <option key={voice.id} value={voice.id} className="bg-slate-900 text-slate-100">
+                        {voice.label} - {voice.description}
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-slate-400">Selected: {selectedCloudVoiceOption.label} - {selectedCloudVoiceOption.description}</p>
                 </div>
               )}
 
