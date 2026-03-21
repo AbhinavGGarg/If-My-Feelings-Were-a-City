@@ -7,7 +7,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
@@ -113,7 +112,7 @@ export function PromptWizard() {
   };
 
   return (
-    <Card className="mx-auto w-full max-w-3xl">
+    <Card className="mx-auto w-full max-w-4xl">
       <CardHeader>
         <CardTitle className="font-serif">Build Your Emotional City</CardTitle>
         <CardDescription>
@@ -153,11 +152,11 @@ export function PromptWizard() {
           )}
 
           {current.type === "text" && (
-            <Input
+            <Textarea
               placeholder={current.placeholder}
               value={answers[current.id] as string}
               onChange={(event) => updateField(current.id, event.target.value)}
-              className="h-12 text-base"
+              className="min-h-28 resize-none text-base leading-relaxed"
             />
           )}
 
