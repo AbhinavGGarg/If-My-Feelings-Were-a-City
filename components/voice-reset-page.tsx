@@ -7,11 +7,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { buildVoiceResetScript, pickCalmVoice, voiceResetModes } from "@/lib/voice-reset";
+import { buildVoiceResetScript, voiceResetModes } from "@/lib/voice-reset";
 import { cn } from "@/lib/utils";
 
 type VoiceStatus = "idle" | "playing" | "paused";
-type VoiceProvider = "checking" | "elevenlabs" | "browser";
+type VoiceProvider = "checking" | "elevenlabs" | "unavailable";
 
 const lineGapMs = 1800;
 
@@ -44,7 +44,6 @@ export function VoiceResetPage() {
   const [customTopic, setCustomTopic] = useState("");
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [provider, setProvider] = useState<VoiceProvider>("checking");
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [currentLineText, setCurrentLineText] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -107,7 +106,9 @@ export function VoiceResetPage() {
     });
 
     if (!response.ok) {
-      throw new Error(`TTS failed with status ${response.status}`);
+      const data = (await response.json().catch(() => ({}))) as { error?: string; details?: string };
+      const details = data.details?.slice(0, 220);
+      throw new Error(data.error ? `${data.error}${details ? ` ${details}` : ""}` : `TTS failed with status ${response.status}`);
     }
 
     return await response.blob();
@@ -121,38 +122,6 @@ export function VoiceResetPage() {
       }
       void playLine(sessionId, nextIndexRef.current);
     }, lineGapMs);
-  };
-
-  const playLineWithBrowserVoice = (sessionId: number, line: string, index: number) => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(line);
-    const calmVoice = pickCalmVoice(voices);
-
-    if (calmVoice) {
-      utterance.voice = calmVoice;
-    }
-
-    utterance.rate = 0.8;
-    utterance.pitch = 0.9;
-    utterance.volume = 0.92;
-
-    utterance.onend = () => {
-      if (sessionIdRef.current !== sessionId || status !== "playing") {
-        return;
-      }
-      nextIndexRef.current = index + 1;
-      scheduleNextLine(sessionId);
-    };
-
-    utterance.onerror = () => {
-      setErrorMessage("Voice playback was interrupted. Try starting again.");
-      stopSession();
-    };
-
-    window.speechSynthesis.speak(utterance);
   };
 
   const playLine = async (sessionId: number, index: number) => {
@@ -171,42 +140,39 @@ export function VoiceResetPage() {
     const line = lines[index];
     setCurrentLineText(line);
 
-    if (provider === "elevenlabs") {
-      try {
-        const blob = await fetchElevenLabsLineAudio(line);
-        if (sessionIdRef.current !== sessionId) {
-          return;
-        }
-
-        clearAudio();
-        const url = URL.createObjectURL(blob);
-        audioUrlRef.current = url;
-        const audio = new Audio(url);
-        audioRef.current = audio;
-
-        audio.onended = () => {
-          if (sessionIdRef.current !== sessionId || status !== "playing") {
-            return;
-          }
-          nextIndexRef.current = index + 1;
-          scheduleNextLine(sessionId);
-        };
-
-        audio.onerror = () => {
-          setErrorMessage("High-quality voice failed to play. Please try again.");
-          stopSession();
-        };
-
-        await audio.play();
-        return;
-      } catch {
-        setErrorMessage("High-quality voice failed. Please try again in a moment.");
-        stopSession();
+    try {
+      const blob = await fetchElevenLabsLineAudio(line);
+      if (sessionIdRef.current !== sessionId) {
         return;
       }
-    }
 
-    playLineWithBrowserVoice(sessionId, line, index);
+      clearAudio();
+      const url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        if (sessionIdRef.current !== sessionId || status !== "playing") {
+          return;
+        }
+        nextIndexRef.current = index + 1;
+        scheduleNextLine(sessionId);
+      };
+
+      audio.onerror = () => {
+        setErrorMessage("High-quality voice failed to play. Please try again.");
+        stopSession();
+      };
+
+      await audio.play();
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "High-quality voice failed.";
+      setErrorMessage(message);
+      stopSession();
+      return;
+    }
   };
 
   const startSession = () => {
@@ -214,8 +180,8 @@ export function VoiceResetPage() {
       return;
     }
 
-    if (!("speechSynthesis" in window)) {
-      setErrorMessage("Voice is not supported in this browser.");
+    if (provider !== "elevenlabs") {
+      setErrorMessage("High-quality voice is unavailable. Please add a valid ElevenLabs API key.");
       return;
     }
 
@@ -240,11 +206,7 @@ export function VoiceResetPage() {
 
     clearGapTimer();
 
-    if (provider === "elevenlabs") {
-      audioRef.current?.pause();
-    } else if (typeof window !== "undefined") {
-      window.speechSynthesis.pause();
-    }
+    audioRef.current?.pause();
 
     setStatus("paused");
   };
@@ -256,21 +218,10 @@ export function VoiceResetPage() {
 
     setStatus("playing");
 
-    if (provider === "elevenlabs") {
-      if (audioRef.current && audioRef.current.paused && audioRef.current.currentTime > 0) {
-        void audioRef.current.play();
-      } else {
-        void playLine(sessionIdRef.current, nextIndexRef.current);
-      }
-      return;
-    }
-
-    if (typeof window !== "undefined") {
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      } else {
-        void playLine(sessionIdRef.current, nextIndexRef.current);
-      }
+    if (audioRef.current && audioRef.current.paused && audioRef.current.currentTime > 0) {
+      void audioRef.current.play();
+    } else {
+      void playLine(sessionIdRef.current, nextIndexRef.current);
     }
   };
 
@@ -282,20 +233,7 @@ export function VoiceResetPage() {
   };
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const updateVoices = () => {
-      setVoices(window.speechSynthesis.getVoices());
-    };
-
-    const frame = window.requestAnimationFrame(updateVoices);
-    window.speechSynthesis.addEventListener("voiceschanged", updateVoices);
-
     return () => {
-      window.cancelAnimationFrame(frame);
-      window.speechSynthesis.removeEventListener("voiceschanged", updateVoices);
       hardCancelPlayback();
     };
     // hardCancelPlayback is intentionally stable enough for cleanup in this mount-only effect.
@@ -307,14 +245,23 @@ export function VoiceResetPage() {
       try {
         const response = await fetch("/api/voice-reset/tts", { cache: "no-store" });
         if (!response.ok) {
-          setProvider("browser");
+          setProvider("unavailable");
           return;
         }
 
-        const data = (await response.json()) as { available?: boolean };
-        setProvider(data.available ? "elevenlabs" : "browser");
+        const data = (await response.json()) as { available?: boolean; reason?: string };
+        if (data.available) {
+          setProvider("elevenlabs");
+          return;
+        }
+
+        setProvider("unavailable");
+        if (data.reason) {
+          setErrorMessage(data.reason);
+        }
       } catch {
-        setProvider("browser");
+        setProvider("unavailable");
+        setErrorMessage("Unable to verify ElevenLabs access.");
       }
     };
 

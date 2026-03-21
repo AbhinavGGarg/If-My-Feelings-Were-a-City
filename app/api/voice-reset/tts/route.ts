@@ -1,19 +1,80 @@
 import { NextResponse } from "next/server";
 
-const demoApiKey =
-  "wHH7GDCXv2gGvVY0pVlL57IT8BDQdWEb4OStKyNTwHH7GDCXv2gGvVY0pVlL57IT8BDQdWEb4OStKyNT";
 const defaultVoiceId = process.env.ELEVENLABS_CALM_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
+const defaultModelId = process.env.ELEVENLABS_MODEL_ID || "eleven_multilingual_v2";
+
+const getApiKey = () => process.env.ELEVENLABS_API_KEY?.trim();
+
+const extractElevenLabsError = (raw: string) => {
+  try {
+    const parsed = JSON.parse(raw) as {
+      detail?: { status?: string; message?: string } | string;
+    };
+    if (typeof parsed.detail === "string") {
+      return parsed.detail;
+    }
+    if (parsed.detail && typeof parsed.detail === "object") {
+      const status = parsed.detail.status?.trim();
+      const message = parsed.detail.message?.trim();
+      if (status && message) {
+        return `${status}: ${message}`;
+      }
+      if (message) {
+        return message;
+      }
+      if (status) {
+        return status;
+      }
+    }
+  } catch {
+    return raw.slice(0, 220);
+  }
+  return raw.slice(0, 220);
+};
 
 export async function GET() {
-  const available = Boolean(process.env.ELEVENLABS_API_KEY || demoApiKey);
-  return NextResponse.json({
-    available,
-    provider: available ? "elevenlabs" : "browser",
-  });
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    return NextResponse.json({
+      available: false,
+      provider: "none",
+      reason: "Missing ELEVENLABS_API_KEY on the server.",
+    });
+  }
+
+  try {
+    const probe = await fetch("https://api.elevenlabs.io/v1/user", {
+      method: "GET",
+      headers: {
+        "xi-api-key": apiKey,
+      },
+      cache: "no-store",
+    });
+
+    if (!probe.ok) {
+      const details = await probe.text();
+      return NextResponse.json({
+        available: false,
+        provider: "none",
+        reason: `ElevenLabs key check failed: ${extractElevenLabsError(details)}`,
+      });
+    }
+
+    return NextResponse.json({
+      available: true,
+      provider: "elevenlabs",
+    });
+  } catch {
+    return NextResponse.json({
+      available: false,
+      provider: "none",
+      reason: "Unable to reach ElevenLabs.",
+    });
+  }
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.ELEVENLABS_API_KEY || demoApiKey;
+  const apiKey = getApiKey();
 
   if (!apiKey) {
     return NextResponse.json(
@@ -45,7 +106,7 @@ export async function POST(request: Request) {
     },
     body: JSON.stringify({
       text,
-      model_id: "eleven_multilingual_v2",
+      model_id: defaultModelId,
       output_format: "mp3_44100_128",
       voice_settings: {
         stability: 0.78,
@@ -61,7 +122,10 @@ export async function POST(request: Request) {
   if (!response.ok) {
     const errorText = await response.text();
     return NextResponse.json(
-      { error: `ElevenLabs request failed (${response.status}).`, details: errorText },
+      {
+        error: `ElevenLabs request failed (${response.status}).`,
+        details: extractElevenLabsError(errorText),
+      },
       { status: 502 },
     );
   }
