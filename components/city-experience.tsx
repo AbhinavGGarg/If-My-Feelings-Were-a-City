@@ -128,9 +128,9 @@ export function CityExperience() {
               <BookOpen className="h-4 w-4 text-sky-300" />
               <span className="font-medium">How to read your city</span>
             </p>
-            <p>District shape and color represent your strongest emotional forces.</p>
-            <p>Road flow, weather, and lighting show pressure, energy, and emotional atmosphere.</p>
-            <p>Click or hover districts to see what each area symbolizes in plain language.</p>
+            <p>Each card is one emotional area, labeled clearly.</p>
+            <p>The percentage shows how strong that emotion is right now.</p>
+            <p>The main emotion appears larger and brighter than the others.</p>
           </CardContent>
         </Card>
       </motion.div>

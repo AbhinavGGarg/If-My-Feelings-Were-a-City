@@ -15,39 +15,41 @@ import {
 } from "@/lib/types";
 
 const districtLayout = [
-  { id: "district-1", x: 70, y: 110, width: 260, height: 170 },
-  { id: "district-2", x: 365, y: 80, width: 250, height: 180 },
-  { id: "district-3", x: 660, y: 115, width: 250, height: 170 },
-  { id: "district-4", x: 120, y: 330, width: 260, height: 190 },
-  { id: "district-5", x: 435, y: 345, width: 260, height: 190 },
-  { id: "district-6", x: 740, y: 335, width: 220, height: 180 },
+  { id: "district-1", x: 90, y: 110, width: 250, height: 180 },
+  { id: "district-2", x: 395, y: 110, width: 250, height: 180 },
+  { id: "district-3", x: 700, y: 110, width: 250, height: 180 },
+  { id: "district-4", x: 90, y: 350, width: 250, height: 180 },
+  { id: "district-5", x: 395, y: 350, width: 250, height: 180 },
+  { id: "district-6", x: 700, y: 350, width: 250, height: 180 },
 ];
 
 const districtNaming: Record<EmotionKey, string> = {
-  anxiety: "Signal Knot",
-  hope: "Sunrise Quarter",
-  loneliness: "Farline District",
-  grief: "Rain Memorial Ward",
-  love: "Bridge Commons",
-  ambition: "Skyworks Core",
-  burnout: "Dim Grid",
-  nostalgia: "Old Town Lights",
-  confusion: "Crosswind Junction",
-  peace: "Stillwater Garden",
-  anger: "Pressure Yard",
-  curiosity: "Open Loop",
-  joy: "Bright Market",
-  fear: "Watchtower Block",
-  restlessness: "Pulse Transit",
-  shame: "Hidden Courtyard",
+  anxiety: "Anxiety",
+  hope: "Growth",
+  loneliness: "Social",
+  grief: "Heavy",
+  love: "Social",
+  ambition: "Focus",
+  burnout: "Overload",
+  nostalgia: "Memory",
+  confusion: "Unclear",
+  peace: "Calm",
+  anger: "Tension",
+  curiosity: "Curiosity",
+  joy: "Joy",
+  fear: "Fear",
+  restlessness: "Restless",
+  shame: "Self-Doubt",
 };
 
 const fallbackEmotionOrder: EmotionKey[] = [
-  "hope",
-  "love",
+  "anxiety",
   "ambition",
   "peace",
-  "nostalgia",
+  "love",
+  "hope",
+  "burnout",
+  "loneliness",
   "curiosity",
 ];
 
@@ -230,7 +232,6 @@ function buildRoads(districts: District[], profile: EmotionalProfile): Road[] {
     [2, 5],
     [3, 4],
     [4, 5],
-    [0, 4],
   ];
 
   const roads = baseConnections.map(([fromIndex, toIndex], index) => {
@@ -251,34 +252,10 @@ function buildRoads(districts: District[], profile: EmotionalProfile): Road[] {
       toDistrictId: to.id,
       width,
       congestion: round(clamp(0.35 + anxiety * 0.55 + burnout * 0.2 - hope * 0.25, 0.15, 1)),
-      curvedOffset: Math.round((index % 2 === 0 ? 1 : -1) * (38 + loneliness * 60)),
+      curvedOffset: Math.round((index % 2 === 0 ? 1 : -1) * (12 + loneliness * 18)),
       isStalled: burnout > 0.55 && index % 3 === 0,
     };
   });
-
-  if (profile.vector.anxiety > 0.55) {
-    roads.push({
-      id: "road-overflow-a",
-      fromDistrictId: districts[0].id,
-      toDistrictId: districts[2].id,
-      width: 4.8,
-      congestion: clamp(0.78 + profile.vector.anxiety * 0.2, 0, 1),
-      curvedOffset: -140,
-      isStalled: false,
-    });
-  }
-
-  if (profile.vector.loneliness > 0.56) {
-    roads.push({
-      id: "road-longline",
-      fromDistrictId: districts[3].id,
-      toDistrictId: districts[2].id,
-      width: 5.2,
-      congestion: 0.2,
-      curvedOffset: 170,
-      isStalled: false,
-    });
-  }
 
   return roads;
 }
