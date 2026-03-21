@@ -34,6 +34,28 @@ export async function GET() {
       });
     }
 
+    const realtimeProbe = await fetch(
+      `https://api.featherless.ai/v1/realtime?model=${encodeURIComponent(defaultModelId)}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sdp: "v=0" }),
+        cache: "no-store",
+      },
+    );
+
+    if (realtimeProbe.status >= 500) {
+      const raw = await realtimeProbe.text();
+      return NextResponse.json({
+        available: false,
+        provider: "none",
+        reason: `Featherless realtime is unavailable right now (${realtimeProbe.status}): ${raw.slice(0, 180)}`,
+      });
+    }
+
     return NextResponse.json({
       available: true,
       provider: "featherless",
