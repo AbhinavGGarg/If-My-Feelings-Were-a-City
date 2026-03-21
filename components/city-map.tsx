@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { districtPlainMeaning } from "@/lib/emotion-copy";
+import { districtDisplayName, districtPlainMeaning } from "@/lib/emotion-copy";
 import type { Building, CityModel, District, EmotionKey, Landmark, LightingState, WeatherState } from "@/lib/types";
 
 interface CityMapProps {
@@ -154,6 +154,7 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
   }, [city.districts, hoveredDistrictId, selectedDistrictId]);
 
   const dominantDistrict = city.districts.find((district) => district.id === dominantDistrictId) ?? city.districts[0];
+  const dominantDistrictLabel = districtDisplayName(dominantDistrict.anchorEmotion);
 
   const buildingsByDistrict = useMemo(() => {
     const byDistrict = new Map<string, Building[]>();
@@ -233,6 +234,7 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
           const selected = district.id === selectedDistrictId;
           const dominant = district.id === dominantDistrictId;
           const score = Math.round(city.emotionalProfile.vector[district.anchorEmotion] * 100);
+          const districtLabel = districtDisplayName(district.anchorEmotion);
 
           const expansion = dominant ? 16 : selected ? 8 : 0;
           const x = district.x - expansion / 2;
@@ -276,7 +278,7 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
               <rect x={x + 10} y={y + 10} width={width - 20} height={34} rx={9} fill="#111c28" fillOpacity={0.66} />
 
               <text x={x + 20} y={y + 33} className="fill-slate-50 text-[22px] font-semibold tracking-wide">
-                {district.name}
+                {districtLabel}
               </text>
 
               <text x={x + 20} y={y + 63} className="fill-slate-200 text-[16px] font-medium">
@@ -344,12 +346,12 @@ export function CityMap({ city, selectedDistrictId, dominantDistrictId, onSelect
 
       <div className="pointer-events-none absolute left-4 right-4 top-4 flex items-start justify-between gap-3">
         <div className="max-w-[74%] space-y-1 rounded-md border border-slate-700/80 bg-slate-950/78 px-3 py-2.5 text-sm text-slate-100">
-          <p>{districtPlainMeaning(activeDistrict.name, activeDistrict.anchorEmotion)}</p>
+          <p>{districtPlainMeaning(districtDisplayName(activeDistrict.anchorEmotion), activeDistrict.anchorEmotion)}</p>
           <p className="text-xs text-slate-300">{activeDistrict.description}</p>
         </div>
         <div className="space-y-1">
           <div className="rounded-md border border-amber-300/40 bg-amber-300/10 px-2.5 py-1 text-xs uppercase tracking-[0.14em] text-amber-100">
-            Main: {dominantDistrict.name}
+            Main: {dominantDistrictLabel}
           </div>
           <div className="rounded-md border border-slate-700/70 bg-slate-950/70 px-2.5 py-1 text-xs text-slate-200">
             {city.weather} • {city.lighting}

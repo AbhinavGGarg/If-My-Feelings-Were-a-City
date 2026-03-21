@@ -2,7 +2,7 @@ import { Gauge, Layers } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { districtPlainMeaning } from "@/lib/emotion-copy";
+import { districtDisplayName, districtPlainMeaning } from "@/lib/emotion-copy";
 import type { CityModel, District } from "@/lib/types";
 import { toTitleCase } from "@/lib/utils";
 
@@ -14,15 +14,16 @@ interface DistrictDetailsPanelProps {
 
 export function DistrictDetailsPanel({ city, district, isDominant }: DistrictDetailsPanelProps) {
   const strength = Math.round(city.emotionalProfile.vector[district.anchorEmotion] * 100);
+  const districtLabel = districtDisplayName(district.anchorEmotion);
 
   return (
     <Card>
       <CardHeader className="space-y-3">
         <div className="flex items-start justify-between gap-3">
-          <CardTitle>{district.name}</CardTitle>
+          <CardTitle>{districtLabel}</CardTitle>
           {isDominant ? <Badge variant="amber">Most dominant district</Badge> : <Badge>Selected district</Badge>}
         </div>
-        <CardDescription>{districtPlainMeaning(district.name, district.anchorEmotion)}</CardDescription>
+        <CardDescription>{districtPlainMeaning(districtLabel, district.anchorEmotion)}</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">

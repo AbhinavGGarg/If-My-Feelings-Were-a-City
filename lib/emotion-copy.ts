@@ -1,5 +1,24 @@
 import type { EmotionKey } from "@/lib/types";
 
+export const canonicalDistrictLabels: Record<EmotionKey, string> = {
+  anxiety: "Anxiety",
+  hope: "Growth",
+  loneliness: "Social",
+  grief: "Heavy",
+  love: "Social",
+  ambition: "Focus",
+  burnout: "Overload",
+  nostalgia: "Memory",
+  confusion: "Unclear",
+  peace: "Calm",
+  anger: "Tension",
+  curiosity: "Curiosity",
+  joy: "Joy",
+  fear: "Fear",
+  restlessness: "Restless",
+  shame: "Self-Doubt",
+};
+
 export const plainEmotionMeaning: Record<EmotionKey, string> = {
   anxiety: "feeling mentally crowded and overwhelmed",
   hope: "seeing possibility and wanting forward motion",
@@ -18,6 +37,10 @@ export const plainEmotionMeaning: Record<EmotionKey, string> = {
   restlessness: "feeling unsettled and unable to fully land",
   shame: "withdrawing because things feel exposed or heavy",
 };
+
+export function districtDisplayName(emotion: EmotionKey) {
+  return canonicalDistrictLabels[emotion];
+}
 
 export function districtPlainMeaning(name: string, emotion: EmotionKey) {
   return `${name} = ${plainEmotionMeaning[emotion]}.`;
