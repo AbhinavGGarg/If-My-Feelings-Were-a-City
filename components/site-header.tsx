@@ -13,6 +13,7 @@ const tabs = [
   { href: "/", label: "Home" },
   { href: "/start", label: "Build" },
   { href: "/city", label: "City" },
+  { href: "/voice-reset", label: "Voice Reset" },
   { href: "/saved", label: "Saved" },
 ];
 

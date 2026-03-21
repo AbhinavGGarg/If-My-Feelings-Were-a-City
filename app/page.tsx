@@ -42,6 +42,11 @@ const frontTabs = [
     href: "/saved",
   },
   {
+    name: "Voice Reset",
+    description: "Run a calm guided voice reflection with peaceful scenes.",
+    href: "/voice-reset",
+  },
+  {
     name: "Account",
     description: "Use login and signup to keep your city library connected.",
     href: "/login",
@@ -83,7 +88,7 @@ export default function HomePage() {
 
         <section className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
           <p className="mb-3 text-xs uppercase tracking-[0.18em] text-slate-400">Tabs</p>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {frontTabs.map((tab) => (
               <Link
                 key={tab.name}
