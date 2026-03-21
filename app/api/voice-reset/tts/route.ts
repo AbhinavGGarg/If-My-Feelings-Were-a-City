@@ -77,9 +77,9 @@ export async function POST(request: Request) {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/sdp",
+          "Content-Type": "application/json",
         },
-        body: sdp,
+        body: JSON.stringify({ sdp }),
         cache: "no-store",
       },
     );
@@ -95,7 +95,15 @@ export async function POST(request: Request) {
       );
     }
 
-    return new Response(responseBody, {
+    let normalizedSdp = responseBody;
+    try {
+      const parsed = JSON.parse(responseBody) as { sdp?: string; answer?: string };
+      normalizedSdp = parsed.sdp || parsed.answer || responseBody;
+    } catch {
+      normalizedSdp = responseBody;
+    }
+
+    return new Response(normalizedSdp, {
       status: 200,
       headers: {
         "Content-Type": "application/sdp",
