@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 type VoiceStatus = "idle" | "playing" | "paused";
 type VoiceProvider = "checking" | "elevenlabs" | "browser";
 
-const lineGapMs = 2300;
+const lineGapMs = 1800;
 
 function CalmWave({ active }: { active: boolean }) {
   return (
@@ -193,13 +193,15 @@ export function VoiceResetPage() {
         };
 
         audio.onerror = () => {
-          playLineWithBrowserVoice(sessionId, line, index);
+          setErrorMessage("High-quality voice failed to play. Please try again.");
+          stopSession();
         };
 
         await audio.play();
         return;
       } catch {
-        playLineWithBrowserVoice(sessionId, line, index);
+        setErrorMessage("High-quality voice failed. Please try again in a moment.");
+        stopSession();
         return;
       }
     }
@@ -377,7 +379,7 @@ export function VoiceResetPage() {
                 <Volume2 className="h-5 w-5 text-sky-300" /> Session controls
               </CardTitle>
               <CardDescription>
-                Calm pace with 2.3-second pauses between lines. Provider: {provider === "checking" ? "Checking..." : provider}
+                Calm pace with 1.8-second pauses between lines. Provider: {provider === "checking" ? "Checking..." : provider}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

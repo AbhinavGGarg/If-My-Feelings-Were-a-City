@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 
+const demoApiKey =
+  "wHH7GDCXv2gGvVY0pVlL57IT8BDQdWEb4OStKyNTwHH7GDCXv2gGvVY0pVlL57IT8BDQdWEb4OStKyNT";
 const defaultVoiceId = process.env.ELEVENLABS_CALM_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 
 export async function GET() {
-  const available = Boolean(process.env.ELEVENLABS_API_KEY);
+  const available = Boolean(process.env.ELEVENLABS_API_KEY || demoApiKey);
   return NextResponse.json({
     available,
     provider: available ? "elevenlabs" : "browser",
@@ -11,7 +13,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
+  const apiKey = process.env.ELEVENLABS_API_KEY || demoApiKey;
 
   if (!apiKey) {
     return NextResponse.json(
@@ -44,12 +46,13 @@ export async function POST(request: Request) {
     body: JSON.stringify({
       text,
       model_id: "eleven_multilingual_v2",
+      output_format: "mp3_44100_128",
       voice_settings: {
-        stability: 0.72,
-        similarity_boost: 0.82,
-        style: 0.05,
+        stability: 0.78,
+        similarity_boost: 0.85,
+        style: 0,
         use_speaker_boost: true,
-        speed: 0.78,
+        speed: 0.76,
       },
     }),
     cache: "no-store",
