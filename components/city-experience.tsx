@@ -129,8 +129,8 @@ export function CityExperience() {
               <span className="font-medium">How to read your city</span>
             </p>
             <p>Each card is one emotional area, labeled clearly.</p>
-            <p>The percentage shows how strong that emotion is right now.</p>
-            <p>The main emotion appears larger and brighter than the others.</p>
+            <p>The percentage shows how strong that emotion is right now, while roads show emotional flow.</p>
+            <p>Buildings and landmarks add context for intensity, memory, connection, and recovery needs.</p>
           </CardContent>
         </Card>
       </motion.div>
