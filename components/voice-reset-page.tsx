@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 type VoiceStatus = "idle" | "playing" | "paused";
 type VoiceEngine = "browser" | "featherless";
 
-const lineGapMs = 1300;
+const lineGapMs = 1000;
 const defaultCloudModel = "recursal/QRWKV6-32B-Instruct-Preview-v0.1";
 const cloudVoices = [
   "Darok/america",
@@ -632,7 +632,7 @@ export function VoiceResetPage() {
               <CardTitle className="flex items-center gap-2">
                 <Volume2 className="h-5 w-5 text-sky-300" /> Session controls
               </CardTitle>
-              <CardDescription>Calm pace with 1.3-second pauses between lines. Provider: {providerLabel}</CardDescription>
+              <CardDescription>Calm pace with 1.0-second pauses between lines. Provider: {providerLabel}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-2 sm:grid-cols-2">
