@@ -53,10 +53,19 @@ export async function GET() {
 
     if (!probe.ok) {
       const details = await probe.text();
+      const parsedError = extractElevenLabsError(details);
+      if (parsedError.includes("missing_permissions") && parsedError.includes("user_read")) {
+        return NextResponse.json({
+          available: true,
+          provider: "elevenlabs",
+          reason: "Restricted key detected. Voice is still available for text-to-speech.",
+        });
+      }
+
       return NextResponse.json({
         available: false,
         provider: "none",
-        reason: `ElevenLabs key check failed: ${extractElevenLabsError(details)}`,
+        reason: `ElevenLabs key check failed: ${parsedError}`,
       });
     }
 
