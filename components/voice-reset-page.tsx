@@ -7,11 +7,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { buildVoiceResetScript, voiceResetModes } from "@/lib/voice-reset";
+import { buildVoiceResetScript, pickCalmVoice, voiceResetModes } from "@/lib/voice-reset";
 import { cn } from "@/lib/utils";
 
 type VoiceStatus = "idle" | "playing" | "paused";
-type VoiceProvider = "checking" | "elevenlabs" | "unavailable";
+type VoiceEngine = "browser" | "elevenlabs";
 
 const lineGapMs = 1800;
 
@@ -43,7 +43,11 @@ export function VoiceResetPage() {
   const [selectedModeId, setSelectedModeId] = useState(voiceResetModes[0].id);
   const [customTopic, setCustomTopic] = useState("");
   const [status, setStatus] = useState<VoiceStatus>("idle");
-  const [provider, setProvider] = useState<VoiceProvider>("checking");
+  const [engine, setEngine] = useState<VoiceEngine>("browser");
+  const [browserReady, setBrowserReady] = useState(false);
+  const [elevenLabsReady, setElevenLabsReady] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceUri, setSelectedVoiceUri] = useState("");
   const [currentLineText, setCurrentLineText] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -58,6 +62,16 @@ export function VoiceResetPage() {
     () => voiceResetModes.find((mode) => mode.id === selectedModeId) ?? voiceResetModes[0],
     [selectedModeId],
   );
+
+  const selectedBrowserVoice = useMemo(() => {
+    if (!voices.length) {
+      return null;
+    }
+    if (selectedVoiceUri) {
+      return voices.find((voice) => voice.voiceURI === selectedVoiceUri) ?? pickCalmVoice(voices);
+    }
+    return pickCalmVoice(voices);
+  }, [voices, selectedVoiceUri]);
 
   const clearGapTimer = () => {
     if (gapTimerRef.current) {
@@ -114,6 +128,40 @@ export function VoiceResetPage() {
     return await response.blob();
   };
 
+  const playLineWithBrowserVoice = (sessionId: number, line: string, index: number) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setErrorMessage("Device voice is not available in this browser.");
+      stopSession();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(line);
+    const calmVoice = selectedBrowserVoice ?? pickCalmVoice(window.speechSynthesis.getVoices());
+
+    if (calmVoice) {
+      utterance.voice = calmVoice;
+    }
+
+    utterance.rate = 0.82;
+    utterance.pitch = 0.9;
+    utterance.volume = 0.95;
+
+    utterance.onend = () => {
+      if (sessionIdRef.current !== sessionId) {
+        return;
+      }
+      nextIndexRef.current = index + 1;
+      scheduleNextLine(sessionId);
+    };
+
+    utterance.onerror = () => {
+      setErrorMessage("Device voice playback was interrupted. Please try again.");
+      stopSession();
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
   const scheduleNextLine = (sessionId: number) => {
     clearGapTimer();
     gapTimerRef.current = window.setTimeout(() => {
@@ -140,6 +188,11 @@ export function VoiceResetPage() {
     const line = lines[index];
     setCurrentLineText(line);
 
+    if (engine === "browser") {
+      playLineWithBrowserVoice(sessionId, line, index);
+      return;
+    }
+
     try {
       const blob = await fetchElevenLabsLineAudio(line);
       if (sessionIdRef.current !== sessionId) {
@@ -153,7 +206,7 @@ export function VoiceResetPage() {
       audioRef.current = audio;
 
       audio.onended = () => {
-        if (sessionIdRef.current !== sessionId || status !== "playing") {
+        if (sessionIdRef.current !== sessionId) {
           return;
         }
         nextIndexRef.current = index + 1;
@@ -161,7 +214,8 @@ export function VoiceResetPage() {
       };
 
       audio.onerror = () => {
-        setErrorMessage("High-quality voice failed to play. Please try again.");
+        setErrorMessage("Cloud voice failed to play. Switched to device voice.");
+        setEngine("browser");
         stopSession();
       };
 
@@ -169,7 +223,8 @@ export function VoiceResetPage() {
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "High-quality voice failed.";
-      setErrorMessage(message);
+      setErrorMessage(`${message} Switched to device voice.`);
+      setEngine("browser");
       stopSession();
       return;
     }
@@ -180,8 +235,13 @@ export function VoiceResetPage() {
       return;
     }
 
-    if (provider !== "elevenlabs") {
-      setErrorMessage("High-quality voice is unavailable. Please add a valid ElevenLabs API key.");
+    if (engine === "elevenlabs" && !elevenLabsReady) {
+      setErrorMessage("Cloud voice is unavailable right now. Use device voice.");
+      return;
+    }
+
+    if (engine === "browser" && !browserReady) {
+      setErrorMessage("Device voice is unavailable in this browser.");
       return;
     }
 
@@ -206,7 +266,11 @@ export function VoiceResetPage() {
 
     clearGapTimer();
 
-    audioRef.current?.pause();
+    if (engine === "elevenlabs") {
+      audioRef.current?.pause();
+    } else if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.pause();
+    }
 
     setStatus("paused");
   };
@@ -218,10 +282,21 @@ export function VoiceResetPage() {
 
     setStatus("playing");
 
-    if (audioRef.current && audioRef.current.paused && audioRef.current.currentTime > 0) {
-      void audioRef.current.play();
-    } else {
-      void playLine(sessionIdRef.current, nextIndexRef.current);
+    if (engine === "elevenlabs") {
+      if (audioRef.current && audioRef.current.paused && audioRef.current.currentTime > 0) {
+        void audioRef.current.play();
+      } else {
+        void playLine(sessionIdRef.current, nextIndexRef.current);
+      }
+      return;
+    }
+
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      } else {
+        void playLine(sessionIdRef.current, nextIndexRef.current);
+      }
     }
   };
 
@@ -241,32 +316,69 @@ export function VoiceResetPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setBrowserReady(false);
+      return;
+    }
+
+    setBrowserReady(true);
+
+    const updateVoices = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      setVoices(availableVoices);
+      const calm = pickCalmVoice(availableVoices);
+      if (calm) {
+        setSelectedVoiceUri((current) => current || calm.voiceURI);
+      }
+    };
+
+    updateVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", updateVoices);
+
+    return () => {
+      window.speechSynthesis.removeEventListener("voiceschanged", updateVoices);
+    };
+  }, []);
+
+  useEffect(() => {
     const checkProvider = async () => {
       try {
         const response = await fetch("/api/voice-reset/tts", { cache: "no-store" });
         if (!response.ok) {
-          setProvider("unavailable");
+          setElevenLabsReady(false);
           return;
         }
 
         const data = (await response.json()) as { available?: boolean; reason?: string };
         if (data.available) {
-          setProvider("elevenlabs");
+          setElevenLabsReady(true);
           return;
         }
 
-        setProvider("unavailable");
+        setElevenLabsReady(false);
         if (data.reason) {
-          setErrorMessage(data.reason);
+          setErrorMessage(`${data.reason} Using device voice.`);
         }
       } catch {
-        setProvider("unavailable");
-        setErrorMessage("Unable to verify ElevenLabs access.");
+        setElevenLabsReady(false);
       }
     };
 
     void checkProvider();
   }, []);
+
+  useEffect(() => {
+    if (!browserReady && elevenLabsReady) {
+      setEngine("elevenlabs");
+    }
+  }, [browserReady, elevenLabsReady]);
+
+  const providerLabel =
+    engine === "elevenlabs"
+      ? "Cloud voice (ElevenLabs)"
+      : browserReady
+        ? "Device calm voice (no credits)"
+        : "Checking...";
 
   return (
     <div className="min-h-[calc(100vh-64px)] bg-[radial-gradient(circle_at_16%_12%,rgba(125,190,255,0.1),transparent_36%),radial-gradient(circle_at_82%_15%,rgba(255,207,132,0.09),transparent_35%),#060d15] px-6 py-10">
@@ -325,11 +437,57 @@ export function VoiceResetPage() {
               <CardTitle className="flex items-center gap-2">
                 <Volume2 className="h-5 w-5 text-sky-300" /> Session controls
               </CardTitle>
-              <CardDescription>
-                Calm pace with 1.8-second pauses between lines. Provider: {provider === "checking" ? "Checking..." : provider}
-              </CardDescription>
+              <CardDescription>Calm pace with 1.8-second pauses between lines. Provider: {providerLabel}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setEngine("browser")}
+                  disabled={!browserReady}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                    engine === "browser"
+                      ? "border-sky-300 bg-sky-300/10 text-sky-100"
+                      : "border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-500",
+                  )}
+                >
+                  Device calm voice
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEngine("elevenlabs")}
+                  disabled={!elevenLabsReady}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                    engine === "elevenlabs"
+                      ? "border-sky-300 bg-sky-300/10 text-sky-100"
+                      : "border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-500",
+                  )}
+                >
+                  Cloud voice
+                </button>
+              </div>
+
+              {engine === "browser" && browserReady && voices.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Voice style</p>
+                  <select
+                    value={selectedVoiceUri}
+                    onChange={(event) => setSelectedVoiceUri(event.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-300"
+                  >
+                    {voices
+                      .filter((voice) => voice.lang.toLowerCase().startsWith("en"))
+                      .map((voice) => (
+                        <option key={voice.voiceURI} value={voice.voiceURI} className="bg-slate-900 text-slate-100">
+                          {voice.name} ({voice.lang})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
               <div className="rounded-lg border border-slate-800/70 bg-slate-900/70 p-3">
                 <CalmWave active={status === "playing"} />
               </div>
