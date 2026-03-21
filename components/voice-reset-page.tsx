@@ -11,9 +11,27 @@ import { buildVoiceResetScript, pickCalmVoice, voiceResetModes } from "@/lib/voi
 import { cn } from "@/lib/utils";
 
 type VoiceStatus = "idle" | "playing" | "paused";
-type VoiceEngine = "browser" | "elevenlabs";
+type VoiceEngine = "browser" | "featherless";
 
 const lineGapMs = 1800;
+const defaultCloudModel = "recursal/QRWKV6-32B-Instruct-Preview-v0.1";
+const cloudVoices = [
+  "Darok/america",
+  "Darok/joshua",
+  "Darok/paola",
+  "Darok/jessica",
+  "Darok/grace",
+  "Darok/maya",
+  "Darok/knightley",
+  "Darok/myriam",
+  "Darok/tommy",
+];
+
+type CloudPendingRequest = {
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timeoutId: number;
+};
 
 function CalmWave({ active }: { active: boolean }) {
   return (
@@ -45,7 +63,8 @@ export function VoiceResetPage() {
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [engine, setEngine] = useState<VoiceEngine>("browser");
   const [browserReady, setBrowserReady] = useState(false);
-  const [elevenLabsReady, setElevenLabsReady] = useState(false);
+  const [cloudReady, setCloudReady] = useState(false);
+  const [selectedCloudVoice, setSelectedCloudVoice] = useState("Darok/grace");
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoiceUri, setSelectedVoiceUri] = useState("");
   const [currentLineText, setCurrentLineText] = useState("");
@@ -54,9 +73,13 @@ export function VoiceResetPage() {
   const linesRef = useRef<string[]>([]);
   const sessionIdRef = useRef(0);
   const nextIndexRef = useRef(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioUrlRef = useRef<string | null>(null);
   const gapTimerRef = useRef<number | null>(null);
+  const statusRef = useRef<VoiceStatus>("idle");
+
+  const cloudPcRef = useRef<RTCPeerConnection | null>(null);
+  const cloudDcRef = useRef<RTCDataChannel | null>(null);
+  const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
+  const cloudPendingRef = useRef<CloudPendingRequest | null>(null);
 
   const selectedMode = useMemo(
     () => voiceResetModes.find((mode) => mode.id === selectedModeId) ?? voiceResetModes[0],
@@ -80,23 +103,51 @@ export function VoiceResetPage() {
     }
   };
 
-  const clearAudio = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.onended = null;
-      audioRef.current.onerror = null;
-      audioRef.current = null;
+  const clearCloudPending = (reason?: string) => {
+    const pending = cloudPendingRef.current;
+    if (!pending) {
+      return;
     }
 
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current);
-      audioUrlRef.current = null;
+    window.clearTimeout(pending.timeoutId);
+    cloudPendingRef.current = null;
+
+    if (reason) {
+      pending.reject(new Error(reason));
+    }
+  };
+
+  const disconnectCloud = () => {
+    clearCloudPending("Cloud voice request canceled.");
+
+    if (cloudDcRef.current) {
+      try {
+        cloudDcRef.current.close();
+      } catch {
+        // ignore
+      }
+      cloudDcRef.current = null;
+    }
+
+    if (cloudPcRef.current) {
+      try {
+        cloudPcRef.current.close();
+      } catch {
+        // ignore
+      }
+      cloudPcRef.current = null;
+    }
+
+    if (cloudAudioRef.current) {
+      cloudAudioRef.current.pause();
+      cloudAudioRef.current.srcObject = null;
+      cloudAudioRef.current = null;
     }
   };
 
   const hardCancelPlayback = () => {
     clearGapTimer();
-    clearAudio();
+    disconnectCloud();
 
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -110,22 +161,180 @@ export function VoiceResetPage() {
     setCurrentLineText("");
   };
 
-  const fetchElevenLabsLineAudio = async (text: string) => {
+  const setupCloudChannelHandlers = (channel: RTCDataChannel) => {
+    channel.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data)) as {
+          type?: string;
+          error?: { message?: string };
+        };
+
+        if (payload.type === "error") {
+          clearCloudPending(payload.error?.message || "Cloud voice request failed.");
+          return;
+        }
+
+        if (payload.type === "response.done") {
+          const pending = cloudPendingRef.current;
+          if (!pending) {
+            return;
+          }
+          window.clearTimeout(pending.timeoutId);
+          cloudPendingRef.current = null;
+          pending.resolve();
+        }
+      } catch {
+        // ignore malformed realtime events
+      }
+    };
+  };
+
+  const ensureCloudConnection = async () => {
+    const existingDc = cloudDcRef.current;
+    if (existingDc && existingDc.readyState === "open") {
+      return existingDc;
+    }
+
+    if (typeof window === "undefined" || typeof RTCPeerConnection === "undefined") {
+      throw new Error("WebRTC is unavailable in this browser.");
+    }
+
+    disconnectCloud();
+
+    const pc = new RTCPeerConnection();
+    pc.addTransceiver("audio", { direction: "recvonly" });
+
+    const audio = new Audio();
+    audio.autoplay = true;
+    audio.volume = 0.95;
+    pc.ontrack = (event) => {
+      audio.srcObject = event.streams[0];
+      void audio.play().catch(() => {
+        // autoplay may be blocked if not started from user gesture
+      });
+    };
+
+    const dc = pc.createDataChannel("oai-events");
+    setupCloudChannelHandlers(dc);
+
+    cloudPcRef.current = pc;
+    cloudDcRef.current = dc;
+    cloudAudioRef.current = audio;
+
+    const waitForOpen = new Promise<void>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        reject(new Error("Cloud voice channel timed out while connecting."));
+      }, 12000);
+
+      dc.addEventListener(
+        "open",
+        () => {
+          window.clearTimeout(timeoutId);
+          resolve();
+        },
+        { once: true },
+      );
+
+      dc.addEventListener(
+        "close",
+        () => {
+          window.clearTimeout(timeoutId);
+          reject(new Error("Cloud voice channel closed before connecting."));
+        },
+        { once: true },
+      );
+    });
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
     const response = await fetch("/api/voice-reset/tts", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({
+        sdp: offer.sdp,
+        modelId: defaultCloudModel,
+      }),
     });
 
     if (!response.ok) {
       const data = (await response.json().catch(() => ({}))) as { error?: string; details?: string };
-      const details = data.details?.slice(0, 220);
-      throw new Error(data.error ? `${data.error}${details ? ` ${details}` : ""}` : `TTS failed with status ${response.status}`);
+      throw new Error(data.details || data.error || `Cloud handshake failed (${response.status}).`);
     }
 
-    return await response.blob();
+    const answerSdp = await response.text();
+    await pc.setRemoteDescription({
+      type: "answer",
+      sdp: answerSdp,
+    });
+
+    await waitForOpen;
+
+    dc.send(
+      JSON.stringify({
+        type: "session.update",
+        session: {
+          modalities: ["text", "audio"],
+          voice: selectedCloudVoice,
+          output_audio_format: "pcm16",
+          instructions:
+            "Speak with a calm, warm, grounded voice. Keep pacing slow and soothing.",
+          temperature: 0.2,
+        },
+      }),
+    );
+
+    return dc;
+  };
+
+  const requestCloudSpeech = async (line: string) => {
+    const dc = await ensureCloudConnection();
+
+    await new Promise<void>((resolve, reject) => {
+      clearCloudPending();
+
+      const timeoutId = window.setTimeout(() => {
+        cloudPendingRef.current = null;
+        reject(new Error("Cloud voice generation timed out."));
+      }, 30000);
+
+      cloudPendingRef.current = {
+        resolve,
+        reject,
+        timeoutId,
+      };
+
+      dc.send(
+        JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `Read this line exactly as written, with a calm and gentle tone: ${line}`,
+              },
+            ],
+          },
+        }),
+      );
+
+      dc.send(
+        JSON.stringify({
+          type: "response.create",
+          response: {
+            modalities: ["audio"],
+            voice: selectedCloudVoice,
+            instructions:
+              "Read the latest user line exactly as written. Keep voice soft, slow, and soothing.",
+            temperature: 0.2,
+          },
+        }),
+      );
+    });
   };
 
   const playLineWithBrowserVoice = (sessionId: number, line: string, index: number) => {
@@ -151,7 +360,9 @@ export function VoiceResetPage() {
         return;
       }
       nextIndexRef.current = index + 1;
-      scheduleNextLine(sessionId);
+      if (statusRef.current === "playing") {
+        scheduleNextLine(sessionId);
+      }
     };
 
     utterance.onerror = () => {
@@ -165,7 +376,7 @@ export function VoiceResetPage() {
   const scheduleNextLine = (sessionId: number) => {
     clearGapTimer();
     gapTimerRef.current = window.setTimeout(() => {
-      if (sessionIdRef.current !== sessionId) {
+      if (sessionIdRef.current !== sessionId || statusRef.current !== "playing") {
         return;
       }
       void playLine(sessionId, nextIndexRef.current);
@@ -173,12 +384,11 @@ export function VoiceResetPage() {
   };
 
   const playLine = async (sessionId: number, index: number) => {
-    if (sessionIdRef.current !== sessionId) {
+    if (sessionIdRef.current !== sessionId || statusRef.current !== "playing") {
       return;
     }
 
     const lines = linesRef.current;
-
     if (index >= lines.length) {
       setStatus("idle");
       setCurrentLineText("Session complete. You can replay or choose another scene.");
@@ -194,39 +404,19 @@ export function VoiceResetPage() {
     }
 
     try {
-      const blob = await fetchElevenLabsLineAudio(line);
+      await requestCloudSpeech(line);
       if (sessionIdRef.current !== sessionId) {
         return;
       }
-
-      clearAudio();
-      const url = URL.createObjectURL(blob);
-      audioUrlRef.current = url;
-      const audio = new Audio(url);
-      audioRef.current = audio;
-
-      audio.onended = () => {
-        if (sessionIdRef.current !== sessionId) {
-          return;
-        }
-        nextIndexRef.current = index + 1;
+      nextIndexRef.current = index + 1;
+      if (statusRef.current === "playing") {
         scheduleNextLine(sessionId);
-      };
-
-      audio.onerror = () => {
-        setErrorMessage("Cloud voice failed to play. Switched to device voice.");
-        setEngine("browser");
-        stopSession();
-      };
-
-      await audio.play();
-      return;
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "High-quality voice failed.";
+      const message = error instanceof Error ? error.message : "Cloud voice failed.";
       setErrorMessage(`${message} Switched to device voice.`);
       setEngine("browser");
-      stopSession();
-      return;
+      playLineWithBrowserVoice(sessionId, line, index);
     }
   };
 
@@ -235,8 +425,8 @@ export function VoiceResetPage() {
       return;
     }
 
-    if (engine === "elevenlabs" && !elevenLabsReady) {
-      setErrorMessage("Cloud voice is unavailable right now. Use device voice.");
+    if (engine === "featherless" && !cloudReady) {
+      setErrorMessage("Cloud voice is unavailable right now. Use device calm voice.");
       return;
     }
 
@@ -266,8 +456,8 @@ export function VoiceResetPage() {
 
     clearGapTimer();
 
-    if (engine === "elevenlabs") {
-      audioRef.current?.pause();
+    if (engine === "featherless") {
+      cloudAudioRef.current?.pause();
     } else if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.pause();
     }
@@ -282,9 +472,10 @@ export function VoiceResetPage() {
 
     setStatus("playing");
 
-    if (engine === "elevenlabs") {
-      if (audioRef.current && audioRef.current.paused && audioRef.current.currentTime > 0) {
-        void audioRef.current.play();
+    if (engine === "featherless") {
+      const cloudAudio = cloudAudioRef.current;
+      if (cloudAudio && cloudAudio.paused && cloudAudio.currentTime > 0) {
+        void cloudAudio.play();
       } else {
         void playLine(sessionIdRef.current, nextIndexRef.current);
       }
@@ -306,6 +497,10 @@ export function VoiceResetPage() {
       startSession();
     }, 150);
   };
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     return () => {
@@ -345,22 +540,22 @@ export function VoiceResetPage() {
       try {
         const response = await fetch("/api/voice-reset/tts", { cache: "no-store" });
         if (!response.ok) {
-          setElevenLabsReady(false);
+          setCloudReady(false);
           return;
         }
 
         const data = (await response.json()) as { available?: boolean; reason?: string };
         if (data.available) {
-          setElevenLabsReady(true);
+          setCloudReady(true);
           return;
         }
 
-        setElevenLabsReady(false);
+        setCloudReady(false);
         if (data.reason) {
           setErrorMessage(`${data.reason} Using device voice.`);
         }
       } catch {
-        setElevenLabsReady(false);
+        setCloudReady(false);
       }
     };
 
@@ -368,14 +563,14 @@ export function VoiceResetPage() {
   }, []);
 
   useEffect(() => {
-    if (!browserReady && elevenLabsReady) {
-      setEngine("elevenlabs");
+    if (!browserReady && cloudReady) {
+      setEngine("featherless");
     }
-  }, [browserReady, elevenLabsReady]);
+  }, [browserReady, cloudReady]);
 
   const providerLabel =
-    engine === "elevenlabs"
-      ? "Cloud voice (ElevenLabs)"
+    engine === "featherless"
+      ? "Featherless cloud voice"
       : browserReady
         ? "Device calm voice (no credits)"
         : "Checking...";
@@ -456,16 +651,16 @@ export function VoiceResetPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setEngine("elevenlabs")}
-                  disabled={!elevenLabsReady}
+                  onClick={() => setEngine("featherless")}
+                  disabled={!cloudReady}
                   className={cn(
                     "rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-                    engine === "elevenlabs"
+                    engine === "featherless"
                       ? "border-sky-300 bg-sky-300/10 text-sky-100"
                       : "border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-500",
                   )}
                 >
-                  Cloud voice
+                  Featherless cloud voice
                 </button>
               </div>
 
@@ -484,6 +679,23 @@ export function VoiceResetPage() {
                           {voice.name} ({voice.lang})
                         </option>
                       ))}
+                  </select>
+                </div>
+              )}
+
+              {engine === "featherless" && (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Cloud voice style</p>
+                  <select
+                    value={selectedCloudVoice}
+                    onChange={(event) => setSelectedCloudVoice(event.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-300"
+                  >
+                    {cloudVoices.map((voiceName) => (
+                      <option key={voiceName} value={voiceName} className="bg-slate-900 text-slate-100">
+                        {voiceName}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}
